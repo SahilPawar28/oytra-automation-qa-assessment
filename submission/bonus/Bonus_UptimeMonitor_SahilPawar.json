@@ -1,0 +1,220 @@
+{
+  "name": "Bonus_UptimeMonitor_SahilPawar",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c9bb0897-3885-4ecf-9bad-1226390e4719",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const targetUrl = 'https://demo.realworld.show/';\nconst maxRetries = 3;\nconst retryDelayMs = 1000;\nfunction sleep(ms) { return new Promise(r => setTimeout(r, ms)); }\nlet result = null;\nfor (let attempt = 1; attempt <= maxRetries; attempt++) {\n  const start = Date.now();\n  try {\n    const response = await this.helpers.httpRequest({\n      method: 'GET',\n      url: targetUrl,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n      timeout: 10000,\n    });\n    const responseTimeMs = Date.now() - start;\n    result = {\n      url: targetUrl,\n      statusCode: response.statusCode,\n      responseTimeMs,\n      attempt,\n      isUp: response.statusCode === 200,\n      checkedAt: new Date().toISOString(),\n      error: null,\n    };\n  } catch (err) {\n    const responseTimeMs = Date.now() - start;\n    result = {\n      url: targetUrl,\n      statusCode: null,\n      responseTimeMs,\n      attempt,\n      isUp: false,\n      checkedAt: new Date().toISOString(),\n      error: (err.message || String(err)),\n    };\n  }\n  if (result.isUp || attempt === maxRetries) break;\n  await sleep(retryDelayMs);\n}\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.totalChecks = (staticData.totalChecks || 0) + 1;\nif (!result.isUp) {\n  staticData.downCount = (staticData.downCount || 0) + 1;\n}\nstaticData.sumResponseTimeMs = (staticData.sumResponseTimeMs || 0) + result.responseTimeMs;\nstaticData.maxResponseTimeMs = Math.max(staticData.maxResponseTimeMs || 0, result.responseTimeMs);\nstaticData.lastStatusCode = result.statusCode;\nstaticData.lastCheckedAt = result.checkedAt;\n\nreturn [{ json: result }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "60c4e1ed-10c8-4859-ac45-f26abe953d63",
+      "name": "Ping App (with Retry)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e7761520-915d-4467-8a55-1e8c0555c72c",
+              "leftValue": "={{ $json.isUp }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ],
+      "id": "c97acc0a-b962-475f-862a-114dd8650dfc",
+      "name": "IF - App is Down"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sahilpawar3000@gmail.com",
+        "toEmail": "sahilpawarcollege@gmail.com",
+        "subject": "=🚨 ALERT: App is DOWN (status {{ $json.statusCode }})",
+        "html": "=<h2>Uptime Alert</h2><p><b>URL:</b> {{ $json.url }}</p><p><b>Status Code:</b> {{ $json.statusCode }}</p><p><b>Response Time:</b> {{ $json.responseTimeMs }} ms</p><p><b>Attempts made:</b> {{ $json.attempt }}</p><p><b>Checked At:</b> {{ $json.checkedAt }}</p><p><b>Error:</b> {{ $json.error }}</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        672,
+        -96
+      ],
+      "id": "10023183-967b-4616-a30b-e5622c4eb803",
+      "name": "Send Downtime Alert",
+      "webhookId": "4c17d82c-feb7-4957-bfe7-5a7623560c02",
+      "credentials": {
+        "smtp": {
+          "id": "UMRuWRuSFDJGzMEe",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        368,
+        144
+      ],
+      "id": "8b7b9f62-98da-440c-9fdb-240c3519ff82",
+      "name": "Daily Trigger (Midnight)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst totalChecks = staticData.totalChecks || 0;\nconst downCount = staticData.downCount || 0;\nconst upCount = totalChecks - downCount;\nconst uptimePct = totalChecks > 0 ? ((upCount / totalChecks) * 100).toFixed(2) : 'N/A';\nconst avgResponseTimeMs = totalChecks > 0 ? Math.round((staticData.sumResponseTimeMs || 0) / totalChecks) : 0;\nconst maxResponseTimeMs = staticData.maxResponseTimeMs || 0;\n\nconst summary = {\n  periodEnd: new Date().toISOString(),\n  totalChecks,\n  upCount,\n  downCount,\n  uptimePct,\n  avgResponseTimeMs,\n  maxResponseTimeMs,\n  lastStatusCode: staticData.lastStatusCode || null,\n  lastCheckedAt: staticData.lastCheckedAt || null,\n};\n\nstaticData.totalChecks = 0;\nstaticData.downCount = 0;\nstaticData.sumResponseTimeMs = 0;\nstaticData.maxResponseTimeMs = 0;\n\nreturn [{ json: summary }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        144
+      ],
+      "id": "255cb066-caec-4baf-bb6e-9e72ea1ed660",
+      "name": "Build Daily Summary"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sahilpawar3000@gmail.com",
+        "toEmail": "sahilpawarcollege@gmail.com",
+        "subject": "=📊 Daily Uptime Summary — {{ $json.uptimePct }}% uptime",
+        "html": "=<h2>Daily Uptime Summary</h2><p><b>Period End:</b> {{ $json.periodEnd }}</p><p><b>Total Checks:</b> {{ $json.totalChecks }}</p><p><b>Up:</b> {{ $json.upCount }} &nbsp; <b>Down:</b> {{ $json.downCount }}</p><p><b>Uptime:</b> {{ $json.uptimePct }}%</p><p><b>Avg Response Time:</b> {{ $json.avgResponseTimeMs }} ms</p><p><b>Max Response Time:</b> {{ $json.maxResponseTimeMs }} ms</p><p><b>Last Status Code:</b> {{ $json.lastStatusCode }}</p><p><b>Last Checked At:</b> {{ $json.lastCheckedAt }}</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        816,
+        144
+      ],
+      "id": "a34b67c0-6aec-449e-96af-93e08b900192",
+      "name": "Send Daily Summary Email",
+      "webhookId": "4dc28fdd-da15-465f-8034-1dc145cb54b2",
+      "credentials": {
+        "smtp": {
+          "id": "UMRuWRuSFDJGzMEe",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Ping App (with Retry)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ping App (with Retry)": {
+      "main": [
+        [
+          {
+            "node": "IF - App is Down",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - App is Down": {
+      "main": [
+        [
+          {
+            "node": "Send Downtime Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Trigger (Midnight)": {
+      "main": [
+        [
+          {
+            "node": "Build Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ce38e7a7-0647-41ea-b257-4b36db8ad413",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4b48a902a9632b88ad590f03f0a89bb478ca7986f8990251a92a799d2f1cf91a"
+  },
+  "nodeGroups": [],
+  "id": "IhLVlmCrqLMlaNEL",
+  "tags": []
+}
